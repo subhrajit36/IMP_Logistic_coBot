@@ -11,5 +11,5 @@ controller_manager:
 
 effort_controller:
   ros__parameters:
-     joints:
-       - linear_actuator_joint
+    joints:
+      - linear_actuator_joint

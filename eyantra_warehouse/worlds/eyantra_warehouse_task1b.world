@@ -113,7 +113,20 @@
 <!-- NOISE BOX -->
 
 
+<!-- RACK 1 -->
+<include>
+  <uri>model://rack</uri>
+  <name>rack1</name>
+  <pose>1.05 -2.455 0.0 0 -0 3.14</pose>
+</include>
 
+<include>
+  <uri>model://boxes/box_1</uri>
+  <name>box1</name>
+  <pose>1.13 -2.455 0.89 0 0 0.0</pose>
+</include>
+
+<!-- RACK 1 -->
 
 <!-- RACK 2 -->
 <include>
