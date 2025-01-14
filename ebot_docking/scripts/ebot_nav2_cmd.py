@@ -7,6 +7,8 @@ import time
 import math
 from payload_service.srv import PayloadSW
 from ebot_docking.srv import DockSw  # Import custom service message
+from ebot_docking_boilerplate import MyRobotDockingController
+
 
 def quaternion_from_yaw(yaw):
     qz = math.sin(yaw / 2.0)
@@ -49,9 +51,9 @@ def main():
     goal_pose = PoseStamped()
     goal_pose.header.frame_id = 'map'
     goal_pose.header.stamp = navigator.get_clock().now().to_msg()
-    goal_pose.pose.position.x = 1.13
-    goal_pose.pose.position.y = -2.40
-    yaw = 3.40
+    goal_pose.pose.position.x = 0.75
+    goal_pose.pose.position.y = -2.45
+    yaw = -3.05
     goal_pose.pose.orientation.z, goal_pose.pose.orientation.w = quaternion_from_yaw(yaw)
 
     goal_pose2 = PoseStamped()
@@ -62,7 +64,15 @@ def main():
     yaw_1 = -1.57
     goal_pose2.pose.orientation.z, goal_pose2.pose.orientation.w = quaternion_from_yaw(yaw_1)
 
-    goal_poses = [goal_pose, goal_pose2]
+    goal_pose3 = PoseStamped()
+    goal_pose3.header.frame_id = 'map'
+    goal_pose3.header.stamp = navigator.get_clock().now().to_msg()
+    goal_pose3.pose.position.x = -4.4
+    goal_pose3.pose.position.y = 2.89
+    yaw_2 = -1.57
+    goal_pose3.pose.orientation.z, goal_pose3.pose.orientation.w = quaternion_from_yaw(yaw_2)
+
+    goal_poses = [goal_pose, goal_pose2, goal_pose, goal_pose3, goal_pose, goal_pose2]
 
     for index, goal_pose in enumerate(goal_poses):
         path = navigator.getPath(initial_pose, goal_pose)
@@ -86,42 +96,64 @@ def main():
         if result == TaskResult.SUCCEEDED:
             print('Goal succeeded!')
 
-            if index == 1:
-                node.get_logger().info("Reaching goal_pose2, preparing to call docking service...")
+            # docking_controller = MyRobotDockingController()
 
-                # Create and send the docking service request for Conveyor Belt 2
-                docking_req = DockSw.Request()
-                docking_req.startcmd = True
-                docking_req.undocking = False
-                docking_req.linear_dock = True
-                docking_req.orientation_dock = True
-                docking_req.distance = 0.5
+            # if index in [1, 3, 5]:  # These are `goal_pose` indices
+            #     print(index)
+            #     docking_controller.target_orientation = goal_pose.pose.orientation  # Use appropriate orientation
+            # else:
+            #     print("HI", index)
+            #     docking_controller.target_orientation = None  # No orientation alignment
+            #     print(docking_controller.target_orientation)
+
+
+            node.get_logger().info("Reaching goal_pose2, preparing to call docking service...")
+            # Create and send the docking service request for Conveyor Belt 2
+            docking_req = DockSw.Request()
+            docking_req.startcmd = True
+            docking_req.undocking = False
+            docking_req.linear_dock = True
+            docking_req.orientation_dock = True
+            docking_req.distance = 0.1
+            if index in [1, 3, 5]:
                 docking_req.orientation = -1.57
-                docking_req.rack_no = "Conveyor Belt 2"
+            else:
+                docking_req.orientation = 3.14
+            docking_req.rack_no = "Conveyor Belt 2"
 
-                docking_future = docking_srv.call_async(docking_req)
-                rclpy.spin_until_future_complete(node, docking_future)
+            docking_future = docking_srv.call_async(docking_req)
+            rclpy.spin_until_future_complete(node, docking_future)
 
-                if docking_future.result() is not None:
-                    response = docking_future.result()
-                    print("Docking service response: Success =", response.success)
-                    print("Message from service:", response.message)
+            if docking_future.result() is not None:
+                response = docking_future.result()
+                print("Docking service response: Success =", response.success)
+                print("Message from service:", response.message)
 
+                if index % 2 != 0:
+                    if index == 1:
+                        boxname = "box1"
+                    if index == 3:
+                        boxname = "box2"
+                    if index == 5:
+                        boxname = "box3"
                     req = PayloadSW.Request()
                     req.receive = False     
                     req.drop = True
+                    req.box_name = boxname
                     future = payload_req_cli.call_async(req)
                     rclpy.spin_until_future_complete(node, future)
                     print('Payload service called to drop Boxes.')
                     time.sleep(1)
-                    
-                    if response.success:
-                        print("Docking succeeded. Holding position...")
+                
+                if response.success:
+                    print("Docking succeeded. Holding position...")
+                    if index % 2 != 0:
                         time.sleep(1)
                     else:
-                        print("Docking failed. Robot will hold position at the conveyor belt.")
-                        break
-
+                        time.sleep(5)
+                else:
+                    print("Docking failed. Robot will hold position at the conveyor belt.")
+                    break
         elif result == TaskResult.CANCELED:
             print('Goal was canceled!')
             break

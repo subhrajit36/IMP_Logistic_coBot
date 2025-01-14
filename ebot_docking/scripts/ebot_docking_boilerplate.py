@@ -10,6 +10,7 @@ from rclpy.executors import MultiThreadedExecutor
 from tf_transformations import euler_from_quaternion
 from ebot_docking.srv import DockSw
 import math
+import time
 
 class MyRobotDockingController(Node):
     def __init__(self):
@@ -40,12 +41,12 @@ class MyRobotDockingController(Node):
         self.usrright_value = 0.0
         self.is_docking = False
         self.dock_aligned = False
-        self.target_orientation = 0.0
-        self.target_distance = 0.5  # Default target distance in meters
+        # self.target_orientation = 0.0
+        self.target_distance = 0.1  # Default target distance in meters
         
         # P-controller gains
         self.Kp_angular = 0.5  # Proportional gain for angular control
-        self.Kp_linear = -4.0   # Proportional gain for linear control
+        self.Kp_linear = -1.00   # Proportional gain for linear control
         
         # Create control loop timer (10Hz)
         self.controller_timer = self.create_timer(0.1, self.controller_loop)
@@ -81,28 +82,33 @@ class MyRobotDockingController(Node):
         # Create Twist message for robot control
         cmd_vel = Twist()
 
-        # Calculate orientation error
-        orientation_error = self.normalize_angle(self.target_orientation - self.robot_pose[2] - 0.1)  # Adding more degrees for better proficiency
-        
         # Calculate distance error using ultrasonic sensors
         current_distance = (self.usrleft_value + self.usrright_value) / 2.0
-        distance_error = current_distance - self.target_distance
-        
-        # Check if orientation is aligned first
+        distance_error = abs(current_distance - self.target_distance)
+
+       
+        # Calculate orientation error
+        orientation_error = self.normalize_angle(self.target_orientation - self.robot_pose[2] - 0.1)  # Adding more degrees for better proficiency
+
+        # Apply P-control for angular correction
         if abs(orientation_error) > 0.05:  # ~3 degrees tolerance
-            # Apply P-control for angular correction
             cmd_vel.angular.z = self.Kp_angular * orientation_error
-        else:
+            print("wolaa", self.target_orientation)
+        else:    
             # Adjust linear speed for fine-tuned docking
             cmd_vel.linear.x = self.Kp_linear * distance_error  # Move slowly to avoid bumping into the rack
+            print("hollaa", self.target_orientation)
 
-            # Stop once we're close enough to the rack
-            if current_distance <= 0.5:  # Less than 10cm from the rack
-                self.dock_aligned = True
-                self.is_docking = False
-                cmd_vel.linear.x = 0.0  # Stop the robot
-                cmd_vel.angular.z = 0.0  # Stop rotation
-                self.get_logger().info("Docking completed and stuck to the rack!")
+        # Stop once we're close enough to the rack
+        if current_distance <= 0.05:  # Less than 10cm from the rack
+            self.dock_aligned = True
+            self.is_docking = False
+            cmd_vel.linear.x = 0.0  # Stop the robot
+            cmd_vel.angular.z = 0.0  # Stop rotation
+            self.get_logger().info("Docking completed and stuck to the rack!")
+            time.sleep(3)
+            
+
 
         # Publish velocity commands
         self.cmd_vel_pub.publish(cmd_vel)

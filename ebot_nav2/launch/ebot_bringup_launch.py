@@ -84,7 +84,7 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
         'map',
-        default_value=os.path.join(ebot_nav2_dir, 'maps', 'final_map.yaml'),
+        default_value=os.path.join(ebot_nav2_dir, 'maps', '4C_map.yaml'),
         description='Full path to map yaml file to load')
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(

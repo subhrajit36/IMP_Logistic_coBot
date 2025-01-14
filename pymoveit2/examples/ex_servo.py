@@ -11,6 +11,7 @@ from linkattacher_msgs.srv import AttachLink, DetachLink
 from payload_service.srv import PassingSRV 
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
+from std_msgs.msg import Int32MultiArray
 from math import isclose
 import time
 
@@ -21,6 +22,13 @@ class JointJogPublisher(Node):
         self.publisher_ = self.create_publisher(
             JointJog, '/servo_node/delta_joint_cmds', QoSProfile(depth=10)
         )
+        # Subscription to marker_coordinates topic
+        self.aruco_id_sub = self.create_subscription(
+            Int32MultiArray,
+            '/marker_ids',
+            self.aruco_id_callback,
+            10
+        )
         self.timer = self.create_timer(0.008, self.timer_callback)  # Publish at ~125 Hz
         self.joint_names = [
             'shoulder_pan_joint',
@@ -30,14 +38,31 @@ class JointJogPublisher(Node):
             'wrist_2_joint',
             'wrist_3_joint'
         ]
-        
+
+        pose_for_1_3_inter = [-1.53, -1.44, 1.35, -1.46, -1.57, 3.09]
+        pose_for_1 = [-1.89, -1.30, 1.97, -2.22, -1.57, 2.73]
+        pose_for_3 = [-0.95, -0.88, 1.31, -1.98, -1.56, 3.67]
+        pose_for_2_inter = [1.25, -1.46, 1.27, -1.39, -1.56, 5.88]
+        pose_for_2 = [0.88, -1.10, 1.66, -2.14, -1.55, 5.15]
+        home_pose = [0.00, -2.39, 2.40, -3.15, -1.57, 3.15]
+        drop_pose = [-0.05, -0.82, 1.89, -2.59, -1.56, 3.10]
+
         self.configurations = [
-            [-0.03, -2.15, 1.50, -2.49, -1.54, 3.14],  # 1st
-            [-0.02, -1.80, 0.66, -0.42, -1.56, 3.12],  # 2nd
-            [1.87, -1.26, -1.48, -1.98, -4.69, -2.76],  # 3rd
-            [1.65, -1.87, -2.08, -0.78, -4.69, -2.99],  # 4th (final)
-            [0.00, -1.33, 2.33, -2.55, -1.56, 3.14],   # New config 1 (after magnet on)
-            [-0.17, -0.52, 1.35, -2.38, -1.56, 2.97]   # New config 2 (after magnet on)
+            pose_for_1_3_inter,
+            pose_for_1,
+            home_pose,
+            drop_pose,
+            home_pose,
+            pose_for_2_inter,
+            pose_for_2,
+            home_pose,
+            drop_pose,
+            home_pose,
+            pose_for_1_3_inter,
+            pose_for_3,
+            home_pose,
+            drop_pose,
+            home_pose 
         ]
         
         self.step = 0  # Track which configuration we're on
@@ -72,6 +97,15 @@ class JointJogPublisher(Node):
         """Callback to update current joint positions from the /joint_states topic."""
         self.current_joint_positions = msg.position
 
+    def aruco_id_callback(self, msg):
+        ids = msg.data  # Extract the list of IDs
+        self.get_logger().info(f"Received Aruco IDs: {ids}")
+
+        # Example: Check if a specific ID (e.g., 12) is in the list
+        if 12 in ids:
+            self.get_logger().info("Marker ID 12 detected! Taking action.")
+
+
     def check_target_reached(self, target_config):
         """Check if the arm has reached the target configuration."""
         for i in range(len(target_config)):
@@ -79,12 +113,12 @@ class JointJogPublisher(Node):
                 return False
         return True
 
-    def attach_gripper(self):
+    def attach_gripper(self, boxname):
         """Attach the gripper magnet after reaching the target pose."""
         # print('uihui')
         req = AttachLink.Request()
         # print('uihuiiiiiiiiii')
-        req.model1_name = 'box2'  # Replace with the name of the box you're attaching
+        req.model1_name = boxname  # Replace with the name of the box you're attaching
         req.link1_name = 'link'   # Name of the gripper's link
         req.model2_name = 'ur5'   # Robot name (or your robot's URDF name)
         req.link2_name = 'wrist_3_link'  # Name of the gripper's link on the robot
@@ -102,10 +136,10 @@ class JointJogPublisher(Node):
             self.get_logger().info(f"Failed to attach object: {future.result().message}")
             return False  # Return failure if attachment fails
         
-    def detach_gripper(self):
+    def detach_gripper(self, boxname):
         """Call the DetachLink service to turn off the gripper magnet."""
         req = DetachLink.Request()
-        req.model1_name = 'box2'  # Replace with the name of the box you're detaching
+        req.model1_name = boxname  # Replace with the name of the box you're detaching
         req.link1_name = 'link'   # Name of the gripper's link
         req.model2_name = 'ur5'   # Robot name (or your robot's URDF name)
         req.link2_name = 'wrist_3_link'  # Name of the gripper's link on the robot
@@ -122,7 +156,7 @@ class JointJogPublisher(Node):
             return False  # Return failure if detachment fails
 
         
-    def handle_passing_service(self):
+    def handle_passing_service(self, boxname):
         """Handle PassingSRV requests to detach the gripper magnet."""
         req = PassingSRV.Request()
         response = PassingSRV.Response()
@@ -131,7 +165,7 @@ class JointJogPublisher(Node):
             self.get_logger().info("Passing service triggered to drop the object.")
 
             # Attempt to detach the gripper magnet
-            detached = self.detach_gripper()
+            detached = self.detach_gripper(boxname)
             if detached:
                 response.success = True
                 response.message = "Object successfully detached."
@@ -156,7 +190,7 @@ class JointJogPublisher(Node):
             jog_msg.header.stamp = self.get_clock().now().to_msg()  # Set current time
             jog_msg.header.frame_id = ''
             jog_msg.joint_names = self.joint_names
-            jog_msg.velocities = [4.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
+            jog_msg.velocities = [3.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
             jog_msg.duration = 0.01  # Duration for each velocity command
             
             # Publish the message
@@ -167,11 +201,11 @@ class JointJogPublisher(Node):
         if self.stop_publishing:
             self.get_logger().info('Target reached. Stopping.')
             time.sleep(3)
-            self.handle_passing_service()
+            # self.handle_passing_service()
             return  # Stop the timer once the target is reached
         
 
-        if self.step >= 6:
+        if self.step >= 14:
             self.get_logger().info('All configurations executed, stopping.')
             self.stop_publishing = True
             return  # Stop the timer once all configurations are processed
@@ -182,11 +216,55 @@ class JointJogPublisher(Node):
             self.get_logger().info(f"Target configuration {self.step + 1} reached.")
             print(self.step)
             
-            if self.step == 3:  # After reaching the 4th config
-                attached = self.attach_gripper()  # Attach the gripper magnet after reaching the 4th pose
-                if attached is True:
-                    self.step += 1  # Move to the next configuration only after successful attachment
-                return  # Allow the next configuration to be processed
+            if self.step in [2, 7, 12]:
+                while 12 not in getattr(self, "detected_ids", []):  # Wait until Marker ID 12 is detected
+                    self.get_logger().info("Waiting for Marker ID 12...")
+                    rclpy.spin_once(self, timeout_sec=0.1)  # Allow processing of subscription callbacks
+                self.get_logger().info("Marker ID 12 detected! Proceeding with the next step.")
+            self.step += 1
+
+            # Call PassingSRV service when step is 3, 8, or 13
+            if self.step in [3, 8, 13]:
+                self.get_logger().info(f"Marker ID 12 detected. Proceeding with step {self.step}.")
+
+                if self.step == 3:
+                    boxname = 'box1'
+                elif self.step == 8:
+                    boxname = 'box2'
+                elif self.step == 13:
+                    boxname = 'box3'
+
+                self.get_logger().info(f"Triggering PassingSRV at step {self.step}.")
+                response = self.handle_passing_service(boxname)
+                if response.success:
+                    self.get_logger().info(f"Passing service succeeded: {response.message}")
+                    # self.step += 1
+                else:
+                    self.get_logger().info(f"Passing service failed: {response.message}")
+                    # self.step += 1
+            
+
+            if self.step in [1, 6, 11]:
+                if self.step == 1:
+                    boxname = 'box1'
+                    attached = self.attach_gripper(boxname)  # Attach the gripper magnet after reaching the 4th pose
+                    if attached is True:
+                        self.step += 1  # Move to the next configuration only after successful attachment
+                    return  # Allow the next configuration to be processed
+                
+                elif self.step == 6:
+                    boxname = 'box2'
+                    attached = self.attach_gripper(boxname)  # Attach the gripper magnet after reaching the 4th pose
+                    if attached is True:
+                        self.step += 1  # Move to the next configuration only after successful attachment
+                    return  # Allow the next configuration to be processed
+                
+                elif self.step == 11:
+                    boxname = 'box3'
+                    attached = self.attach_gripper(boxname)  # Attach the gripper magnet after reaching the 4th pose
+                    if attached is True:
+                        self.step += 1  # Move to the next configuration only after successful attachment
+                    return  # Allow the next configuration to be processed
 
             self.move_to_configuration(target_config)  # Move to the next configuration
             self.step += 1  # Increment to the next configuration                
@@ -200,7 +278,7 @@ class JointJogPublisher(Node):
         jog_msg.header.stamp = self.get_clock().now().to_msg()  # Set current time
         jog_msg.header.frame_id = ''
         jog_msg.joint_names = self.joint_names
-        jog_msg.velocities = [4.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
+        jog_msg.velocities = [3.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
         jog_msg.duration = 0.01  # Duration for each velocity command
         
         # Publish the message

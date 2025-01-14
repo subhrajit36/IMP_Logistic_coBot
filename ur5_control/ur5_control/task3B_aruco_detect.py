@@ -41,8 +41,7 @@ from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import TransformStamped
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CompressedImage, Image
-from std_msgs.msg import String
-from geometry_msgs.msg import Point
+from std_msgs.msg import Int32MultiArray
 from rclpy.qos import (
     QoSDurabilityPolicy,
     QoSHistoryPolicy,
@@ -61,6 +60,8 @@ def calculate_rectangle_area(coordinates):
     Description:    Function to calculate area or detected aruco
 
     Args:
+        msg = Int32MultiArray()
+        msg.data = self.detected_marker_ids  # Publish the list of
         coordinates (list):     coordinates of detected aruco (4 set of (x,y) coordinates)
 
     Returns:
@@ -216,7 +217,7 @@ class aruco_tf(Node):
         self.color_cam_sub = self.create_subscription(Image, '/camera/color/image_raw', self.colorimagecb, 10)
         self.depth_cam_sub = self.create_subscription(Image, '/camera/aligned_depth_to_color/image_raw', self.depthimagecb, 10)
         # self.marker_pub = self.create_publisher(String, '/detected_markers',10)
-        self.coordinates_pub = self.create_publisher(Point, 'marker_coordinates', qos_profile)
+        self.aruco_ids_pub = self.create_publisher(Int32MultiArray, '/marker_ids', qos_profile)
 
 
 
@@ -304,57 +305,6 @@ class aruco_tf(Node):
         centerCamY = 360
         cam_mat = np.array([[focalX, 0.0, 640.0], [0.0, focalY, 360.0], [0.0, 0.0, 1.0]])
         dist_mat = np.array([0.0,0.0,0.0,0.0,0.0])
-            
-
-        ############ ADD YOUR CODE HERE ############
-
-        # INSTRUCTIONS & HELP : 
-
-        #	->  Get aruco center, distance from rgb, angle, width and ids list from 'detect_aruco_center' defined above
-
-        #   ->  Loop over detected box ids received to calculate position and orientation transform to publish TF 
-
-        #   ->  Use this equation to correct the input aruco angle received from cv2 aruco function 'estimatePoseSingleMarkers' here
-        #       It's a correction formula- 
-        #       angle_aruco = (0.788*angle_aruco) - ((angle_aruco**2)/3160)
-
-        #   ->  Then calculate quaternions from roll pitch yaw (where, roll and pitch are 0 while yaw is corrected aruco_angle)
-
-        #   ->  Use center_aruco_list to get realsense depth and log them down. (divide by 1000 to convert mm to m)
-
-        #   ->  Use this formula to rectify x, y, z based on focal length, center value and size of image
-        #       x = distance_from_rgb * (sizeCamX - cX - centerCamX) / focalX
-        #       y = distance_from_rgb * (sizeCamY - cY - centerCamY) / focalY
-        #       z = distance_from_rgb
-        #       where, 
-        #               cX, and cY from 'center_aruco_list'
-        #               distance_from_rgb is depth of object calculated in previous step
-        #               sizeCamX, sizeCamY, centerCamX, centerCamY, focalX and focalY are defined above
-
-        #   ->  Now, mark the center points on image frame using cX and cY variables with help of 'cv2.cirle' function 
-
-        #   ->  Here, till now you receive coordinates from camera_link to aruco marker center position. 
-        #       So, publish this transform w.r.t. camera_link using Geometry Message - TransformStamped 
-        #       so that we will collect it's position w.r.t base_link in next step.
-        #       Use the following frame_id-
-        #           frame_id = 'camera_link'
-        #           child_frame_id = 'cam_<marker_id>'          Ex: cam_20, where 20 is aruco marker ID
-
-        #   ->  Then finally lookup transform between base_link and obj frame to publish the TF
-        #       You may use 'lookup_transform' function to pose of obj frame w.r.t base_link 
-
-        #   ->  And now publish TF between object frame and base_link
-        #       Use the following frame_id-
-        #           frame_id = 'base_link'
-        #           child_frame_id = 'obj_<marker_id>'          Ex: obj_20, where 20 is aruco marker ID
-
-        #   ->  At last show cv2 image window having detected markers drawn and center points located using 'cv2.imshow' function.
-        #       Refer MD book on portal for sample image -> https://portal.e-yantra.org/
-
-        #   ->  NOTE:   The Z axis of TF should be pointing inside the box (Purpose of this will be known in task 1C)
-        #               Also, auto eval script will be judging angular difference as well. So, make sure that Z axis is inside the box (Refer sample images on Portal - MD book)
-
-        ############################################
 
         
         aruco_list = []
@@ -370,6 +320,8 @@ class aruco_tf(Node):
 
         tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
+        self.detected_marker_ids = []
+
         # Iterate through all detected ArUco markers
         for aruco_info in aruco_list:
             
@@ -378,13 +330,6 @@ class aruco_tf(Node):
             angle = aruco_info['Angle']
             distance = aruco_info['Distance']
             width = aruco_info['Width']
-
-            # x, y, z = None, None, None
-
-            # detected_markers[marker_id] = (x, y, z)
-
-            # detected_markers_msg = String(data=str(detected_markers))
-            # self.marker_pub.publish(detected_markers_msg)
 
 
             rotation_matrix, _ = cv2.Rodrigues(angle)
@@ -481,26 +426,28 @@ class aruco_tf(Node):
                     tf_broadcaster.sendTransform(transform_base)
 
                     translation = transform_lookup.transform.translation
-                    coords_text = f"x: {translation.x}, y: {translation.y}, z: {translation.z}"
+                    # coords_text = f"x: {translation.x}, y: {translation.y}, z: {translation.z}"
 
-                    # Create and publish the Point message
-                    point_msg = Point()
-                    point_msg.x = translation.x
-                    point_msg.y = translation.y
-                    point_msg.z = translation.z
+                    if marker_id not in self.detected_marker_ids:
+                        self.detected_marker_ids.append(marker_id)
 
-                    # Publish the coordinates
-                    self.coordinates_pub.publish(point_msg)
-            
-                    # Overlay the text on the image at the marker's center position
-                    cv2.putText(self.cv_image, coords_text, (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                    '''place for publishing coordinates to any topic'''
+
+                    ## Overlay the text on the image at the marker's center position
+                    #cv2.putText(self.cv_image, coords_text, (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
 
                 except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                     self.get_logger().warn(f"Failed to lookup transform for marker ID {marker_id}")
 
+
         cv2.imshow("rgb_image", self.cv_image)
         cv2.waitKey(1)
+
+        msg = Int32MultiArray()
+        msg.data = self.detected_marker_ids  # Publish the list of marker IDs
+        self.aruco_ids_pub.publish(msg)
+        self.get_logger().info(f"Published Aruco IDs: {self.detected_marker_ids}")
 
 
 
