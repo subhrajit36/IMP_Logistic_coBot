@@ -8,6 +8,7 @@ import math
 from payload_service.srv import PayloadSW
 from ebot_docking.srv import DockSw  # Import custom service message
 from payload_service.srv import PassingSRV
+from nav_msgs.msg import Path
 
 def quaternion_from_yaw(yaw):
     qz = math.sin(yaw / 2.0)
@@ -66,7 +67,7 @@ def main():
     goal_pose2 = PoseStamped()
     goal_pose2.header.frame_id = 'map'
     goal_pose2.header.stamp = navigator.get_clock().now().to_msg()
-    goal_pose2.pose.position.x = 2.32
+    goal_pose2.pose.position.x = 2.38
     goal_pose2.pose.position.y = 2.55
     yaw_1 = -1.57
     goal_pose2.pose.orientation.z, goal_pose2.pose.orientation.w = quaternion_from_yaw(yaw_1)

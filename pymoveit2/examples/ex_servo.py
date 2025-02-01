@@ -53,7 +53,7 @@ class JointJogPublisher(Node):
         ]
 
         pose_for_1_3_inter = [-1.53, -1.44, 1.35, -1.46, -1.57, 3.09]
-        pose_for_1 = [-1.89, -1.30, 1.97, -2.22, -1.57, 2.73]
+        pose_for_1 = [-1.71, -1.31, 1.95, -2.20, -1.57, 2.87]
         pose_for_3 = [-0.95, -0.88, 1.31, -1.98, -1.56, 3.67]
         pose_for_2_inter = [1.25, -1.46, 1.27, -1.39, -1.56, 5.88]
         pose_for_2 = [0.88, -1.10, 1.66, -2.14, -1.55, 5.15]
@@ -63,6 +63,7 @@ class JointJogPublisher(Node):
         self.configurations = [
             pose_for_1_3_inter,
             pose_for_1,
+            pose_for_1_3_inter,
             home_pose,
             drop_pose,
             home_pose,
@@ -208,7 +209,7 @@ class JointJogPublisher(Node):
             self.get_logger().info('Target reached. Stopping.')
             return
 
-        if self.step >= 14:
+        if self.step >= 15:
             self.get_logger().info('All configurations executed, stopping.')
             self.stop_publishing = True
             return
@@ -217,14 +218,14 @@ class JointJogPublisher(Node):
         if self.check_target_reached(target_config):
             self.get_logger().info(f"Target configuration {self.step + 1} reached.")
 
-            if self.step in [3, 8, 13]:  # Steps where the arm should drop the box
+            if self.step in [4, 9, 14]:  # Steps where the arm should drop the box
                 if self.waiting_for_drop:
                     # Determine the box name based on step
-                    if self.step == 3:
+                    if self.step == 4:
                         boxname = 'box1'
-                    elif self.step == 8:
+                    elif self.step == 9:
                         boxname = 'box2'
-                    elif self.step == 13:
+                    elif self.step == 14:
                         boxname = 'box3'
 
                     # Detach the gripper magnet
@@ -239,12 +240,12 @@ class JointJogPublisher(Node):
                     self.get_logger().info("Waiting for drop request...")
                     return  # Wait until drop request is received
 
-            elif self.step in [1, 6, 11]:  # Steps where the arm should pick up the box
+            elif self.step in [1, 7, 12]:  # Steps where the arm should pick up the box
                 if self.step == 1:
                     boxname = 'box1'
-                elif self.step == 6:
+                elif self.step == 7:
                     boxname = 'box2'
-                elif self.step == 11:
+                elif self.step == 12:
                     boxname = 'box3'
 
                 # Attach the gripper magnet
