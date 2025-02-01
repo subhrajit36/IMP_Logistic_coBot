@@ -46,7 +46,7 @@ class MyRobotDockingController(Node):
         
         # P-controller gains
         self.Kp_angular = 0.5  # Proportional gain for angular control
-        self.Kp_linear = -1.00   # Proportional gain for linear control
+        self.Kp_linear = -0.90   # Proportional gain for linear control
         
         # Create control loop timer (10Hz)
         self.controller_timer = self.create_timer(0.1, self.controller_loop)
@@ -106,7 +106,7 @@ class MyRobotDockingController(Node):
             cmd_vel.linear.x = 0.0  # Stop the robot
             cmd_vel.angular.z = 0.0  # Stop rotation
             self.get_logger().info("Docking completed and stuck to the rack!")
-            time.sleep(3)
+            time.sleep(5)
             
 
 

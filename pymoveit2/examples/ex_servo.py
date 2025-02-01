@@ -10,7 +10,12 @@ from sensor_msgs.msg import JointState
 from linkattacher_msgs.srv import AttachLink, DetachLink
 from payload_service.srv import PassingSRV 
 from rclpy.node import Node
-from rclpy.qos import QoSProfile
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+)
 from std_msgs.msg import Int32MultiArray
 from math import isclose
 import time
@@ -19,6 +24,14 @@ import time
 class JointJogPublisher(Node):
     def __init__(self):
         super().__init__('joint_jog_publisher')
+        self.waiting_for_drop = False  # State variable to track waiting for drop
+
+
+        qos_profile=QoSProfile(
+                durability=QoSDurabilityPolicy.VOLATILE,
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                history=QoSHistoryPolicy.KEEP_ALL,
+            )
         self.publisher_ = self.create_publisher(
             JointJog, '/servo_node/delta_joint_cmds', QoSProfile(depth=10)
         )
@@ -76,7 +89,7 @@ class JointJogPublisher(Node):
 
         # Create service client for GripperMagnetON
         self.gripper_control_1 = self.create_client(AttachLink, '/GripperMagnetON')
-        
+    
         # Wait for the service to be available
         while not self.gripper_control_1.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Attach service not available, waiting again...')
@@ -91,6 +104,7 @@ class JointJogPublisher(Node):
         self.passing_service = self.create_service(
             PassingSRV, '/passing_srv', self.handle_passing_service
         )
+        self.docked = False  # Initial state
         self.get_logger().info("PassingSRV service ready.")
     
     def get_current_joint_positions(self, msg):
@@ -98,11 +112,12 @@ class JointJogPublisher(Node):
         self.current_joint_positions = msg.position
 
     def aruco_id_callback(self, msg):
-        ids = msg.data  # Extract the list of IDs
-        self.get_logger().info(f"Received Aruco IDs: {ids}")
+        print("SUUIIIIIIIIIIIIIIIIIIIIIIIIIII")
+        self.ids = msg.data  # Extract the list of IDs
+        self.get_logger().info(f"Received Aruco IDs: {self.ids}")
 
         # Example: Check if a specific ID (e.g., 12) is in the list
-        if 12 in ids:
+        if 12 in self.ids:
             self.get_logger().info("Marker ID 12 detected! Taking action.")
 
 
@@ -115,9 +130,7 @@ class JointJogPublisher(Node):
 
     def attach_gripper(self, boxname):
         """Attach the gripper magnet after reaching the target pose."""
-        # print('uihui')
         req = AttachLink.Request()
-        # print('uihuiiiiiiiiii')
         req.model1_name = boxname  # Replace with the name of the box you're attaching
         req.link1_name = 'link'   # Name of the gripper's link
         req.model2_name = 'ur5'   # Robot name (or your robot's URDF name)
@@ -125,9 +138,7 @@ class JointJogPublisher(Node):
 
         # Call the service asynchronously
         future = self.gripper_control_1.call_async(req)
-        # print('uihui_2')
         rclpy.spin_until_future_complete(self, future, timeout_sec=3.0)
-        # print('uihui_3')
         
         if future.result() is None :
             self.get_logger().info("Gripper Magnet ON - Object Attached")
@@ -155,23 +166,18 @@ class JointJogPublisher(Node):
             self.get_logger().info(f"Failed to detach object: {future.result().message}")
             return False  # Return failure if detachment fails
 
-        
-    def handle_passing_service(self, boxname):
+    def handle_passing_service(self, req, response):
         """Handle PassingSRV requests to detach the gripper magnet."""
-        req = PassingSRV.Request()
         response = PassingSRV.Response()
-        req.drop = True
+
+        # Debug log to check the value of req.drop
+        self.get_logger().info(f"Received drop request: {req.drop}")
+
         if req.drop:
             self.get_logger().info("Passing service triggered to drop the object.")
-
-            # Attempt to detach the gripper magnet
-            detached = self.detach_gripper(boxname)
-            if detached:
-                response.success = True
-                response.message = "Object successfully detached."
-            else:
-                response.success = False
-                response.message = "Failed to detach object."
+            self.waiting_for_drop = True  # Set the state variable
+            response.success = True
+            response.message = "Waiting to drop the object."
         else:
             response.success = False
             response.message = "Drop request not set to true."
@@ -200,90 +206,71 @@ class JointJogPublisher(Node):
     def timer_callback(self):
         if self.stop_publishing:
             self.get_logger().info('Target reached. Stopping.')
-            time.sleep(3)
-            # self.handle_passing_service()
-            return  # Stop the timer once the target is reached
-        
+            return
 
         if self.step >= 14:
             self.get_logger().info('All configurations executed, stopping.')
             self.stop_publishing = True
-            return  # Stop the timer once all configurations are processed
-        
+            return
+
         target_config = self.configurations[self.step]
-        
         if self.check_target_reached(target_config):
             self.get_logger().info(f"Target configuration {self.step + 1} reached.")
-            print(self.step)
-            
-            if self.step in [2, 7, 12]:
-                while 12 not in getattr(self, "detected_ids", []):  # Wait until Marker ID 12 is detected
-                    self.get_logger().info("Waiting for Marker ID 12...")
-                    rclpy.spin_once(self, timeout_sec=0.1)  # Allow processing of subscription callbacks
-                self.get_logger().info("Marker ID 12 detected! Proceeding with the next step.")
-            self.step += 1
 
-            # Call PassingSRV service when step is 3, 8, or 13
-            if self.step in [3, 8, 13]:
-                self.get_logger().info(f"Marker ID 12 detected. Proceeding with step {self.step}.")
+            if self.step in [3, 8, 13]:  # Steps where the arm should drop the box
+                if self.waiting_for_drop:
+                    # Determine the box name based on step
+                    if self.step == 3:
+                        boxname = 'box1'
+                    elif self.step == 8:
+                        boxname = 'box2'
+                    elif self.step == 13:
+                        boxname = 'box3'
 
-                if self.step == 3:
-                    boxname = 'box1'
-                elif self.step == 8:
-                    boxname = 'box2'
-                elif self.step == 13:
-                    boxname = 'box3'
-
-                self.get_logger().info(f"Triggering PassingSRV at step {self.step}.")
-                response = self.handle_passing_service(boxname)
-                if response.success:
-                    self.get_logger().info(f"Passing service succeeded: {response.message}")
-                    # self.step += 1
+                    # Detach the gripper magnet
+                    detached = self.detach_gripper(boxname)
+                    if detached:
+                        self.get_logger().info(f"Box {boxname} detached successfully.")
+                        self.waiting_for_drop = False  # Reset the state variable
+                        self.step += 1  # Move to the next configuration
+                    else:
+                        self.get_logger().info(f"Failed to detach box {boxname}.")
                 else:
-                    self.get_logger().info(f"Passing service failed: {response.message}")
-                    # self.step += 1
-            
+                    self.get_logger().info("Waiting for drop request...")
+                    return  # Wait until drop request is received
 
-            if self.step in [1, 6, 11]:
+            elif self.step in [1, 6, 11]:  # Steps where the arm should pick up the box
                 if self.step == 1:
                     boxname = 'box1'
-                    attached = self.attach_gripper(boxname)  # Attach the gripper magnet after reaching the 4th pose
-                    if attached is True:
-                        self.step += 1  # Move to the next configuration only after successful attachment
-                    return  # Allow the next configuration to be processed
-                
                 elif self.step == 6:
                     boxname = 'box2'
-                    attached = self.attach_gripper(boxname)  # Attach the gripper magnet after reaching the 4th pose
-                    if attached is True:
-                        self.step += 1  # Move to the next configuration only after successful attachment
-                    return  # Allow the next configuration to be processed
-                
                 elif self.step == 11:
                     boxname = 'box3'
-                    attached = self.attach_gripper(boxname)  # Attach the gripper magnet after reaching the 4th pose
-                    if attached is True:
-                        self.step += 1  # Move to the next configuration only after successful attachment
-                    return  # Allow the next configuration to be processed
 
-            self.move_to_configuration(target_config)  # Move to the next configuration
-            self.step += 1  # Increment to the next configuration                
-            return  # Stop publishing velocities once target is reached
-        
-        # Calculate joint displacements (delta)
-        delta_config = [target_config[i] - self.current_joint_positions[i] for i in range(len(target_config))]
+                # Attach the gripper magnet
+                attached = self.attach_gripper(boxname)
+                if attached:
+                    self.get_logger().info(f"Box {boxname} attached successfully.")
+                    self.step += 1  # Move to the next configuration
+                else:
+                    self.get_logger().info(f"Failed to attach box {boxname}.")
+            else:
+                self.step += 1  # Move to the next configuration
+        else:
+            # Calculate joint displacements (delta)
+            delta_config = [target_config[i] - self.current_joint_positions[i] for i in range(len(target_config))]
 
-        # Create JointJog message
-        jog_msg = JointJog()
-        jog_msg.header.stamp = self.get_clock().now().to_msg()  # Set current time
-        jog_msg.header.frame_id = ''
-        jog_msg.joint_names = self.joint_names
-        jog_msg.velocities = [3.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
-        jog_msg.duration = 0.01  # Duration for each velocity command
-        
-        # Publish the message
-        self.publisher_.publish(jog_msg)
-        self.get_logger().info(f'Publishing JointJog: {jog_msg}')
+            # Create JointJog message
+            jog_msg = JointJog()
+            jog_msg.header.stamp = self.get_clock().now().to_msg()  # Set current time
+            jog_msg.header.frame_id = ''
+            jog_msg.joint_names = self.joint_names
+            jog_msg.velocities = [1.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
+            jog_msg.duration = 0.01  # Duration for each velocity command
+
+            # Publish the message
+            self.publisher_.publish(jog_msg)
+            self.get_logger().info(f'Publishing JointJog: {jog_msg}')
 
     def subscribe_to_joint_states(self):
         """Subscribe to the /joint_states topic to get the current joint positions."""
@@ -293,7 +280,6 @@ class JointJogPublisher(Node):
             self.get_current_joint_positions,
             10
         )
-
 
 def main():
     rclpy.init()

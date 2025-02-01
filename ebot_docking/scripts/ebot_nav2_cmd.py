@@ -7,8 +7,7 @@ import time
 import math
 from payload_service.srv import PayloadSW
 from ebot_docking.srv import DockSw  # Import custom service message
-from ebot_docking_boilerplate import MyRobotDockingController
-
+from payload_service.srv import PassingSRV
 
 def quaternion_from_yaw(yaw):
     qz = math.sin(yaw / 2.0)
@@ -35,6 +34,14 @@ def main():
     while not docking_srv.wait_for_service(timeout_sec=1.0):
         node.get_logger().info('Docking service not available, waiting...')
 
+    # Set up the passing service client
+    passing_srv_client = node.create_client(PassingSRV, '/passing_srv')
+
+    # Wait for the passing service to be available
+    while not passing_srv_client.wait_for_service(timeout_sec=1.0):
+        node.get_logger().info('Passing service not available, waiting...')
+
+
     # Set our initial pose
     initial_pose = PoseStamped()
     initial_pose.header.frame_id = 'map'
@@ -52,7 +59,7 @@ def main():
     goal_pose.header.frame_id = 'map'
     goal_pose.header.stamp = navigator.get_clock().now().to_msg()
     goal_pose.pose.position.x = 0.75
-    goal_pose.pose.position.y = -2.45
+    goal_pose.pose.position.y = -2.50
     yaw = -3.05
     goal_pose.pose.orientation.z, goal_pose.pose.orientation.w = quaternion_from_yaw(yaw)
 
@@ -94,18 +101,7 @@ def main():
         # Check result after each goal
         result = navigator.getResult()
         if result == TaskResult.SUCCEEDED:
-            print('Goal succeeded!')
-
-            # docking_controller = MyRobotDockingController()
-
-            # if index in [1, 3, 5]:  # These are `goal_pose` indices
-            #     print(index)
-            #     docking_controller.target_orientation = goal_pose.pose.orientation  # Use appropriate orientation
-            # else:
-            #     print("HI", index)
-            #     docking_controller.target_orientation = None  # No orientation alignment
-            #     print(docking_controller.target_orientation)
-
+            print('Goal succeeded!') 
 
             node.get_logger().info("Reaching goal_pose2, preparing to call docking service...")
             # Create and send the docking service request for Conveyor Belt 2
@@ -114,8 +110,9 @@ def main():
             docking_req.undocking = False
             docking_req.linear_dock = True
             docking_req.orientation_dock = True
-            docking_req.distance = 0.1
+            docking_req.distance = 0.05
             if index in [1, 3, 5]:
+                time.sleep(2)
                 docking_req.orientation = -1.57
             else:
                 docking_req.orientation = 3.14
@@ -128,14 +125,20 @@ def main():
                 response = docking_future.result()
                 print("Docking service response: Success =", response.success)
                 print("Message from service:", response.message)
+                print(index)
 
                 if index % 2 != 0:
+                    print(index)
                     if index == 1:
+                        print('OOOOOOOOOOOOOOOOOOOOOOOO')
                         boxname = "box1"
+                        
                     if index == 3:
                         boxname = "box2"
+                        
                     if index == 5:
                         boxname = "box3"
+                        
                     req = PayloadSW.Request()
                     req.receive = False     
                     req.drop = True
@@ -143,7 +146,27 @@ def main():
                     future = payload_req_cli.call_async(req)
                     rclpy.spin_until_future_complete(node, future)
                     print('Payload service called to drop Boxes.')
-                    time.sleep(1)
+                    time.sleep(20)
+                else:
+                    # Send the PassingSRV request
+                    passing_req = PassingSRV.Request()
+                    print("SUBHRAJIT NEED BOX")
+                    passing_req.drop = True
+                    print("SUBHRAJIT passing_req.drop")
+                    print(passing_req.drop)
+                    passing_future = passing_srv_client.call_async(passing_req)
+                    rclpy.spin_until_future_complete(node, passing_future)
+
+                    if passing_future.result() is not None:
+                        passing_response = passing_future.result()
+                        print("Passing service response: Success =", passing_response.success)
+                        print("Message from Passing service:", passing_response.message)
+                        if passing_response.success:
+                            print("Arm operation completed successfully.")
+                        else:
+                            print("Arm operation failed:", passing_response.message)
+                    else:
+                        print("Failed to get response from Passing service.")      
                 
                 if response.success:
                     print("Docking succeeded. Holding position...")

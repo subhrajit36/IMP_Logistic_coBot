@@ -1,4 +1,4 @@
 bool drop
 ---
 bool success   
-string message 
+string message

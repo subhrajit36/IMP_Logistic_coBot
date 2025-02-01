@@ -217,7 +217,7 @@ class aruco_tf(Node):
         self.color_cam_sub = self.create_subscription(Image, '/camera/color/image_raw', self.colorimagecb, 10)
         self.depth_cam_sub = self.create_subscription(Image, '/camera/aligned_depth_to_color/image_raw', self.depthimagecb, 10)
         # self.marker_pub = self.create_publisher(String, '/detected_markers',10)
-        self.aruco_ids_pub = self.create_publisher(Int32MultiArray, '/marker_ids', qos_profile)
+        self.aruco_ids_pub = self.create_publisher(Int32MultiArray, '/marker_ids', 10)
 
 
 
@@ -230,10 +230,9 @@ class aruco_tf(Node):
         self.br = tf2_ros.TransformBroadcaster(self)                                    # object as transform broadcaster to send transform wrt some frame_id
         self.timer = self.create_timer(image_processing_rate, self.process_image)       # creating a timer based function which gets called on every 0.2 seconds (as defined by 'image_processing_rate' variable)
 
-
         self.cv_image = None                                                            # colour raw image variable (from colorimagecb())
         self.depth_image = None                                                         # depth image variable (from depthimagecb())
-
+        print("Wassup")
 
     def depthimagecb(self, data):
         '''
@@ -250,6 +249,7 @@ class aruco_tf(Node):
         # bridge = CvBridge()
 
         self.depth_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
+        print("Hello depthimagecb")
 
         # INSTRUCTIONS & HELP : 
 
@@ -273,6 +273,8 @@ class aruco_tf(Node):
 
         ############ ADD YOUR CODE HERE ############
         self.cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        print("Hello depthimagecb")
+
 
         # INSTRUCTIONS & HELP : 
 
@@ -311,20 +313,28 @@ class aruco_tf(Node):
         detected_markers = {}
 
         if self.cv_image is None:
+            self.get_logger().warn("No color image received for processing!")
             return
         
         # Get aruco center, distance from rgb, angle, width and ids list from 'detect_aruco_center'
         aruco_list = detect_aruco(self.cv_image)
 
         # corners, ids, rejected = cv2.aruco.detectMarkers(self.cv_image, cv2.aruco_dict, parameters=aruco_params)
+        
+        if not aruco_list:
+            self.get_logger().info("No ArUco markers detected.")
+            cv2.imshow("rgb_image", self.cv_image)
+            cv2.waitKey(1)
 
         tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
         self.detected_marker_ids = []
+        print('marker_ids initialised with list')
 
         # Iterate through all detected ArUco markers
         for aruco_info in aruco_list:
             
+            print("Entered loop!!!!")
             marker_id = aruco_info['ID']
             center = aruco_info['Center']
             angle = aruco_info['Angle']
@@ -410,6 +420,7 @@ class aruco_tf(Node):
             transform_cam.transform.rotation.w = quat[3]
 
             tf_broadcaster.sendTransform(transform_cam)
+            print("Transform done!")
             
             if self.tf_buffer.can_transform('base_link', f'cam_{marker_id}', rclpy.time.Time()):
 
@@ -428,6 +439,8 @@ class aruco_tf(Node):
                     translation = transform_lookup.transform.translation
                     # coords_text = f"x: {translation.x}, y: {translation.y}, z: {translation.z}"
 
+                    print("NOICE!")
+
                     if marker_id not in self.detected_marker_ids:
                         self.detected_marker_ids.append(marker_id)
 
@@ -445,7 +458,7 @@ class aruco_tf(Node):
         cv2.waitKey(1)
 
         msg = Int32MultiArray()
-        msg.data = self.detected_marker_ids  # Publish the list of marker IDs
+        msg.data = list(map(int, self.detected_marker_ids))  # Publish the list of marker IDs
         self.aruco_ids_pub.publish(msg)
         self.get_logger().info(f"Published Aruco IDs: {self.detected_marker_ids}")
 
