@@ -46,7 +46,7 @@ class MyRobotDockingController(Node):
         
         # P-controller gains
         self.Kp_angular = 0.5  # Proportional gain for angular control
-        self.Kp_linear = -0.90   # Proportional gain for linear control
+        self.Kp_linear = -0.80   # Proportional gain for linear control
         
         # Create control loop timer (10Hz)
         self.controller_timer = self.create_timer(0.1, self.controller_loop)
@@ -93,20 +93,20 @@ class MyRobotDockingController(Node):
         # Apply P-control for angular correction
         if abs(orientation_error) > 0.05:  # ~3 degrees tolerance
             cmd_vel.angular.z = self.Kp_angular * orientation_error
-            print("wolaa", self.target_orientation)
+            print("self.target_orientation is: ", self.target_orientation)
         else:    
             # Adjust linear speed for fine-tuned docking
             cmd_vel.linear.x = self.Kp_linear * distance_error  # Move slowly to avoid bumping into the rack
-            print("hollaa", self.target_orientation)
+            print("self.target_orientation is: ", self.target_orientation)
 
         # Stop once we're close enough to the rack
-        if current_distance <= 0.05:  # Less than 10cm from the rack
+        if current_distance <= 0.05:  # Less than 5cm from the rack
             self.dock_aligned = True
             self.is_docking = False
             cmd_vel.linear.x = 0.0  # Stop the robot
             cmd_vel.angular.z = 0.0  # Stop rotation
             self.get_logger().info("Docking completed and stuck to the rack!")
-            time.sleep(5)
+            time.sleep(3)
             
 
 

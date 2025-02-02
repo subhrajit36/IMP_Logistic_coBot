@@ -113,7 +113,7 @@ class JointJogPublisher(Node):
         self.current_joint_positions = msg.position
 
     def aruco_id_callback(self, msg):
-        print("SUUIIIIIIIIIIIIIIIIIIIIIIIIIII")
+        # print("SUUIIIIIIIIIIIIIIIIIIIIIIIIIII")
         self.ids = msg.data  # Extract the list of IDs
         self.get_logger().info(f"Received Aruco IDs: {self.ids}")
 
@@ -132,10 +132,10 @@ class JointJogPublisher(Node):
     def attach_gripper(self, boxname):
         """Attach the gripper magnet after reaching the target pose."""
         req = AttachLink.Request()
-        req.model1_name = boxname  # Replace with the name of the box you're attaching
-        req.link1_name = 'link'   # Name of the gripper's link
-        req.model2_name = 'ur5'   # Robot name (or your robot's URDF name)
-        req.link2_name = 'wrist_3_link'  # Name of the gripper's link on the robot
+        req.model1_name = boxname  
+        req.link1_name = 'link'   
+        req.model2_name = 'ur5'   
+        req.link2_name = 'wrist_3_link'  
 
         # Call the service asynchronously
         future = self.gripper_control_1.call_async(req)
@@ -266,7 +266,7 @@ class JointJogPublisher(Node):
             jog_msg.header.stamp = self.get_clock().now().to_msg()  # Set current time
             jog_msg.header.frame_id = ''
             jog_msg.joint_names = self.joint_names
-            jog_msg.velocities = [1.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
+            jog_msg.velocities = [2.5 * delta for delta in delta_config]  # Adjust velocity for faster movement
             jog_msg.duration = 0.01  # Duration for each velocity command
 
             # Publish the message

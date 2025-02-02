@@ -42,7 +42,6 @@ def main():
     while not passing_srv_client.wait_for_service(timeout_sec=1.0):
         node.get_logger().info('Passing service not available, waiting...')
 
-
     # Set our initial pose
     initial_pose = PoseStamped()
     initial_pose.header.frame_id = 'map'
@@ -56,13 +55,21 @@ def main():
     navigator.waitUntilNav2Active()
 
     # Define goal poses
-    goal_pose = PoseStamped()
-    goal_pose.header.frame_id = 'map'
-    goal_pose.header.stamp = navigator.get_clock().now().to_msg()
-    goal_pose.pose.position.x = 0.75
-    goal_pose.pose.position.y = -2.50
+    goal_pose_home = PoseStamped()
+    goal_pose_home.header.frame_id = 'map'
+    goal_pose_home.header.stamp = navigator.get_clock().now().to_msg()
+    goal_pose_home.pose.position.x = 0.75
+    goal_pose_home.pose.position.y = -2.50
     yaw = -3.05
-    goal_pose.pose.orientation.z, goal_pose.pose.orientation.w = quaternion_from_yaw(yaw)
+    goal_pose_home.pose.orientation.z, goal_pose_home.pose.orientation.w = quaternion_from_yaw(yaw)
+
+    goal_pose_inter = PoseStamped()
+    goal_pose_inter.header.frame_id = 'map'
+    goal_pose_inter.header.stamp = navigator.get_clock().now().to_msg()
+    goal_pose_inter.pose.position.x = 0.70
+    goal_pose_inter.pose.position.y = -2.25
+    yaw = -3.05
+    goal_pose_inter.pose.orientation.z, goal_pose_inter.pose.orientation.w = quaternion_from_yaw(yaw)
 
     goal_pose2 = PoseStamped()
     goal_pose2.header.frame_id = 'map'
@@ -75,18 +82,26 @@ def main():
     goal_pose3 = PoseStamped()
     goal_pose3.header.frame_id = 'map'
     goal_pose3.header.stamp = navigator.get_clock().now().to_msg()
-    goal_pose3.pose.position.x = -4.4
+    goal_pose3.pose.position.x = -4.60
     goal_pose3.pose.position.y = 2.89
     yaw_2 = -1.57
     goal_pose3.pose.orientation.z, goal_pose3.pose.orientation.w = quaternion_from_yaw(yaw_2)
 
-    goal_poses = [goal_pose, goal_pose2, goal_pose, goal_pose3, goal_pose, goal_pose2]
+    goal_poses = [goal_pose_home, goal_pose2, goal_pose_inter, goal_pose3, goal_pose_inter, goal_pose2]
 
     for index, goal_pose in enumerate(goal_poses):
+        # Get the path from the navigator
         path = navigator.getPath(initial_pose, goal_pose)
+
+        # Ensure the path is of type nav_msgs.msg.Path
+        if not isinstance(path, Path):
+            print("Error: Path is not of type nav_msgs.msg.Path")
+            continue
+
+        # Smooth the path
         smoothed_path = navigator.smoothPath(path)
 
-        # Follow path
+        # Follow the smoothed path
         navigator.followPath(smoothed_path)
 
         while not navigator.isTaskComplete():
@@ -102,7 +117,7 @@ def main():
         # Check result after each goal
         result = navigator.getResult()
         if result == TaskResult.SUCCEEDED:
-            print('Goal succeeded!') 
+            print('Goal succeeded!')
 
             node.get_logger().info("Reaching goal_pose2, preparing to call docking service...")
             # Create and send the docking service request for Conveyor Belt 2
@@ -112,9 +127,10 @@ def main():
             docking_req.linear_dock = True
             docking_req.orientation_dock = True
             docking_req.distance = 0.05
-            if index in [1, 3, 5]:
-                time.sleep(2)
+            if index in [1, 5]:
                 docking_req.orientation = -1.57
+            elif index == 3:
+                docking_req.orientation = -1.35
             else:
                 docking_req.orientation = 3.14
             docking_req.rack_no = "Conveyor Belt 2"
@@ -133,21 +149,19 @@ def main():
                     if index == 1:
                         print('OOOOOOOOOOOOOOOOOOOOOOOO')
                         boxname = "box1"
-                        
                     if index == 3:
                         boxname = "box2"
-                        
                     if index == 5:
                         boxname = "box3"
-                        
+
                     req = PayloadSW.Request()
-                    req.receive = False     
+                    req.receive = False
                     req.drop = True
                     req.box_name = boxname
                     future = payload_req_cli.call_async(req)
                     rclpy.spin_until_future_complete(node, future)
                     print('Payload service called to drop Boxes.')
-                    time.sleep(20)
+                    # time.sleep(20)
                 else:
                     # Send the PassingSRV request
                     passing_req = PassingSRV.Request()
@@ -167,14 +181,14 @@ def main():
                         else:
                             print("Arm operation failed:", passing_response.message)
                     else:
-                        print("Failed to get response from Passing service.")      
-                
+                        print("Failed to get response from Passing service.")
+
                 if response.success:
                     print("Docking succeeded. Holding position...")
                     if index % 2 != 0:
                         time.sleep(1)
                     else:
-                        time.sleep(5)
+                        time.sleep(2)
                 else:
                     print("Docking failed. Robot will hold position at the conveyor belt.")
                     break
