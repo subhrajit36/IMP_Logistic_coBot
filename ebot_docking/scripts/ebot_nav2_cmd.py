@@ -71,6 +71,14 @@ def main():
     yaw = -3.05
     goal_pose_inter.pose.orientation.z, goal_pose_inter.pose.orientation.w = quaternion_from_yaw(yaw)
 
+    goal_pose_inter2 = PoseStamped()
+    goal_pose_inter2.header.frame_id = 'map'
+    goal_pose_inter2.header.stamp = navigator.get_clock().now().to_msg()
+    goal_pose_inter2.pose.position.x = 0.70
+    goal_pose_inter2.pose.position.y = -2.35
+    yaw = -3.05
+    goal_pose_inter2.pose.orientation.z, goal_pose_inter2.pose.orientation.w = quaternion_from_yaw(yaw)
+
     goal_pose2 = PoseStamped()
     goal_pose2.header.frame_id = 'map'
     goal_pose2.header.stamp = navigator.get_clock().now().to_msg()
@@ -87,7 +95,7 @@ def main():
     yaw_2 = -1.57
     goal_pose3.pose.orientation.z, goal_pose3.pose.orientation.w = quaternion_from_yaw(yaw_2)
 
-    goal_poses = [goal_pose_home, goal_pose2, goal_pose_inter, goal_pose3, goal_pose_inter, goal_pose2]
+    goal_poses = [goal_pose_home, goal_pose2, goal_pose_inter, goal_pose3, goal_pose_inter2, goal_pose2]
 
     for index, goal_pose in enumerate(goal_poses):
         # Get the path from the navigator
